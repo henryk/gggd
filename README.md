@@ -14,6 +14,9 @@ FIXME: Document lynx setup
 
 * Fetches all messages in all topics as individual mbox files (one directory per group, one subdirectory per topic, one file per message)
 * Can operate on private groups by using lynx' cookie store
+* Postprocessing tool (not operated automatically) `demangle.py` that fixes two sorts of message munging that google applies (probably a bug on their side): 
+  * Some messages get two RFC (2)822 headers. The second one seems to be a proper subset of the first one with added "X-Google-\*"-headers.
+  * Messages with multiple levels of MIME (e.g. multipart( alternative(text, html), attachment)) seem to always lose their first inner MIME header, leading to wrong parsing.
 
 # Missing features (a.k.a TODO)
 
@@ -21,12 +24,6 @@ FIXME: Document lynx setup
 * Incremental update mode using RSS
 * Detect deleted messages and don't create a file that contains a 500 HTML error message
 * Error handling
-
-# Misfeatures (a.k.a FIXME)
-
-* The current way of retrieving mbox data seems to mangle some things:
-  * Some messages get two RFC (2)822 headers. The second one seems to be a proper subset of the first one with added "X-Google-\*"-headers. A tool `demangle_headers.py` is provided to detect and strip the first header.
-  * Messages with multiple levels of MIME (e.g. multipart( alternative(text, html), attachment)) seem to always lose their first inner MIME header, leading to wrong parsing. This seems to be a problem of the API used to fetch raw messages.
 
 # Theory of operation
 The basic ideas of the software are adapted from icy/google-group-crawler with important distinctions: This project is in Python which is easier to read and adapt, and it uses lynx with a configuration file for all operations which allows to access protected groups (lynx needs to be manually logged in to a Google account with group access first).
