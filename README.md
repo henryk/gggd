@@ -10,18 +10,24 @@ FIXME: Document lynx setup
 ./src/gggd.py group-name
 ````
 
+And at a later point to update using the RSS of the latest 50 messages:
+
+````
+./src/gggd.py -u group-name
+````
+
 # Features
 
 * Fetches all messages in all topics as individual mbox files (one directory per group, one subdirectory per topic, one file per message)
 * Can operate on private groups by using lynx' cookie store
-* Postprocessing tool (not operated automatically) `demangle.py` that fixes two sorts of message munging that google applies (probably a bug on their side): 
+* Incremental update mode using RSS
+* Postprocessing tool (not called automatically) `demangle.py` that fixes two sorts of message munging that google applies (probably a bug on their side): 
   * Some messages get two RFC (2)822 headers. The second one seems to be a proper subset of the first one with added "X-Google-\*"-headers.
   * Messages with multiple levels of MIME (e.g. multipart( alternative(text, html), attachment)) seem to always lose their first inner MIME header, leading to wrong parsing.
 
 # Missing features (a.k.a TODO)
 
 * Easy set-up of lynx configuration and cookies
-* Incremental update mode using RSS
 * Detect deleted messages and don't create a file that contains a 500 HTML error message
 * Error handling
 
