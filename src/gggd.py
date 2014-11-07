@@ -23,7 +23,7 @@ from os.path import expanduser
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 import subprocess
-import pprint
+import xml.etree.ElementTree as ElementTree
 
 __all__ = []
 __version__ = 0.1
@@ -109,9 +109,12 @@ class GroupInformation(object):
             if verbose: print "Retrieving message contents for topic %s ..." % topic
             for message in self.topics[topic].keys():
                 message_url = "https://groups.google.com/forum/message/raw?msg=%s/%s/%s" % (self.group_name, topic, message)
-                if verbose: print "Fetching %s" % message_url
-                data = self.fetcher.fetch(message_url, source=True)
-                self.topics[topic][message] = data
+                if self.topics[topic][message] is None:
+                    if verbose: print "Fetching %s" % message_url
+                    data = self.fetcher.fetch(message_url, source=True)
+                    self.topics[topic][message] = data
+                else:
+                    if verbose: "Skipping %s " % message_url
     
     def write_tree(self):
         global verbose
@@ -129,7 +132,51 @@ class GroupInformation(object):
                             fp.write(self.topics[topic][message])
                     else:
                         if verbose: print "Skipping %s, exists" % file_name
+    
+    def read_tree(self, read_contents = True):
+        for topic in os.listdir(self.group_name):
+            self.topics[topic] = {}
+            for message in os.listdir( os.path.join(self.group_name, topic) ):
+                if read_contents:
+                    self.topics[topic][message] = open( os.path.join(self.group_name, topic, message, "r") ).read()
+                else:
+                    self.topics[topic][message] = None
+    
+    def fetch_update(self, update_count, replace_information=False):
+        global verbose
+        if verbose: print "Retrieving update RSS ..."
+        rss_url = "https://groups.google.com/forum/feed/%s/msgs/rss.xml?num=%i" % (self.group_name, update_count)
+        data = self.fetcher.fetch(rss_url, source=True)
         
+        root = ElementTree.fromstring(data)
+        
+        topics = {}
+        
+        nodes = root.findall(".//item/link")
+        for node in nodes:
+            url = node.text
+            if url.startswith("https://groups.google.com/d/msg/%s" % self.group_name):
+                topic, message = url.split("/")[-2:]
+                if verbose: print "Discovered %s, %s" % (topic, message)
+                
+                if not topic in self.topics:
+                    if verbose: print "Topic %s is new" % topic
+                    self.topics[topic] = {}
+                    topics[topic] = {}
+                
+                if not message in self.topics[topic]:
+                    if verbose: print "Message %s is new" % message
+                    self.topics[topic][message] = None
+                    
+                    if not topic in topics: topics[topic] = {}
+                    topics[topic][message] = None
+        
+        if replace_information:
+            self.topics = topics
+        
+        self.fetch_content()
+
+
 
 class CLIError(Exception):
     '''Generic exception to raise and log different fatal errors.'''
@@ -175,11 +222,17 @@ USAGE
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument("-t", "--topic-page-limit", dest="topic_page_limit", help="Number of topic overview pages to process, usually at 20 topics per page", default=None, type=int)
         parser.add_argument("-c", "--lynx-cfg", dest="lynx_cfg", help="Lynx configuration file [default: %(default)s]", default=expanduser("~/.lynxrc"))
+        parser.add_argument("-u", "--update", help="Don't spider, but update from RSS of last messages", action="store_true")
+        parser.add_argument("-U", "--update-count", help="Number of messages to request in RSS for --update mode, default: 50", default=None, type=int)
         parser.add_argument(dest="group", help="Name of the Google Group to fetch", metavar="group")
 
         # Process arguments
         args = parser.parse_args()
-
+        if args.update_count is None:
+            args.update_count = 50
+        else:
+            args.update = True
+        
         group = args.group
         verbose = args.verbose
 
@@ -187,8 +240,15 @@ USAGE
             print("Verbose mode on")
 
         fetcher = LynxFetcher(args.lynx_cfg)
+        
         group_information = GroupInformation(fetcher, group)
-        group_information.fetch(args.topic_page_limit)
+        
+        if args.update:
+            group_information.read_tree(read_contents=False)
+            group_information.fetch_update(args.update_count, replace_information=True)
+        else:
+            group_information.fetch(args.topic_page_limit)
+        
         group_information.write_tree()
         
         return 0
