@@ -24,30 +24,90 @@ from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 import subprocess
 import xml.etree.ElementTree as ElementTree
+from contextlib import contextmanager
+import tempfile
 
 __all__ = []
 __version__ = 0.1
 __date__ = '2014-11-03'
-__updated__ = '2014-11-03'
+__updated__ = '2014-11-07'
 
-DEBUG = 1
+DEBUG = 0
 TESTRUN = 0
 PROFILE = 0
 
 class LynxFetcher(object):
-    def __init__(self, lynx_cfg=None):
+    def __init__(self, lynx_cfg=None, lynx_cookie_file=None):
         self.lynx_cfg = lynx_cfg
+        self.lynx_cookie_file = lynx_cookie_file
+    
+    def default_params(self):
+        args = []
+        if self.lynx_cfg:
+            args.append( "-cfg=" + self.lynx_cfg )
+        if self.lynx_cookie_file:
+            args.extend([
+                "-accept_all_cookies+",
+                "-cookie_file=%s" % self.lynx_cookie_file,
+                "-cookie_save_file=%s" % self.lynx_cookie_file,
+                "-cookies+"
+            ])
+        return args
     
     def fetch(self, url, list_only=False, source=False):
         args = ["lynx", "-dump"]
+        args.extend( self.default_params() )
         if list_only:
             args.append("-listonly")
         if source:
             args.append("-source")
-        if self.lynx_cfg:
-            args.append( "-cfg=" + self.lynx_cfg )
         args.append(url)
         return subprocess.check_output(args)
+    
+    def interactive(self, url):
+        args = ["lynx", "-child", "-nopause"]
+        args.extend( self.default_params() )
+        args.append(url)
+        subprocess.call(args)
+    
+    def dump_config(self):
+        args = ["lynx", "-show_cfg"]
+        args.extend( self.default_params() )
+        return subprocess.check_output(args)
+    
+    def has_cookies(self):
+        if self.lynx_cookie_file:
+            return True
+        
+        configuration_data = self.dump_config()
+        
+        have_set_cookies = False
+        have_cookie_file = False
+        have_persistent_cookies = False
+        
+        for k,v in [e.split(":", 1) for e in configuration_data.splitlines() if not e.startswith("#")]:
+            if k == "SET_COOKIES" and v.startswith("TRUE"):
+                have_set_cookies = True
+            if k == "PERSISTENT_COOKIES" and v.startswith("TRUE"):
+                have_persistent_cookies = True
+            if k == "COOKIE_FILE":
+                have_cookie_file = True
+        
+        return have_persistent_cookies and have_set_cookies and have_cookie_file
+    
+    @contextmanager
+    def temp_context(self):
+        if self.lynx_cookie_file:
+            with tempfile.NamedTemporaryFile() as fp:
+                fp.write(self.dump_config())
+                fp.write("PERSISTENT_COOKIES:TRUE\n")
+                fp.flush()
+                
+                self.lynx_cfg = fp.name
+                
+                yield
+        else:
+            yield
 
 class GroupInformation(object):
     def __init__(self, fetcher, group_name):
@@ -130,6 +190,7 @@ class GroupInformation(object):
                             os.makedirs(dir_name)
                         with open(file_name, "w") as fp:
                             fp.write(self.topics[topic][message])
+                            print file_name
                     else:
                         if verbose: print "Skipping %s, exists" % file_name
     
@@ -175,7 +236,13 @@ class GroupInformation(object):
             self.topics = topics
         
         self.fetch_content()
-
+    
+    def login(self):
+        print """Please log in to your Google groups account (navigate the form fields with up
+and down arrows, submit form with Enter) and then exit the browser (using the 'q' key).
+Press Enter to continue."""
+        sys.stdin.readline()
+        self.fetcher.interactive( "https://www.google.com/a/UniversalLogin?continue=https://groups.google.com/forum/&service=groups2&hd=default" )
 
 
 class CLIError(Exception):
@@ -190,7 +257,7 @@ class CLIError(Exception):
 
 def main(argv=None): # IGNORE:C0111
     '''Command line options.'''
-    global verbose 
+    global verbose, batch_mode
     
     if argv is None:
         argv = sys.argv
@@ -218,10 +285,14 @@ USAGE
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
+        parser.add_argument("-v", "--verbose", action="count", help="set verbosity level [default: %(default)s]")
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
-        parser.add_argument("-t", "--topic-page-limit", dest="topic_page_limit", help="Number of topic overview pages to process, usually at 20 topics per page", default=None, type=int)
-        parser.add_argument("-c", "--lynx-cfg", dest="lynx_cfg", help="Lynx configuration file [default: %(default)s]", default=expanduser("~/.lynxrc"))
+        parser.add_argument("-t", "--topic-page-limit", help="Number of topic overview pages to process, usually at 20 topics per page", default=None, type=int)
+        parser.add_argument("-c", "--lynx-cfg", help="Lynx configuration file [default: %(default)s]", default=expanduser("~/.lynxrc"))
+        parser.add_argument("-C", "--lynx-cookie-file", help="Lynx cookie file to read cookies from and store cookies to")
+        parser.add_argument("-b", "--batch-mode", action="store_true", help="Batch mode: no interaction at all")
+        parser.add_argument("-l", "--login", action="store_true", help="Open the Google groups login form before performing other actions")
+        parser.add_argument("-L", "--login-only", action="store_true", help="Exit after opening the Google groups login form (implies --login)")
         parser.add_argument("-u", "--update", help="Don't spider, but update from RSS of last messages", action="store_true")
         parser.add_argument("-U", "--update-count", help="Number of messages to request in RSS for --update mode, default: 50", default=None, type=int)
         parser.add_argument(dest="group", help="Name of the Google Group to fetch", metavar="group")
@@ -233,23 +304,54 @@ USAGE
         else:
             args.update = True
         
+        if args.login_only:
+            args.login = True
+        
+        if args.login and args.batch_mode:
+            print >>sys.stderr, "Batch mode configured, but login requested. That doesn't work. See documentation."
+            return 1
+        
         group = args.group
         verbose = args.verbose
-
-        if verbose > 0:
-            print("Verbose mode on")
-
-        fetcher = LynxFetcher(args.lynx_cfg)
+        batch_mode = args.batch_mode
         
-        group_information = GroupInformation(fetcher, group)
+        lynx_cfg = args.lynx_cfg
+        lynx_cookie_file = args.lynx_cookie_file
+        if lynx_cookie_file:
+            lynx_cookie_file = os.path.join( os.getcwd(), lynx_cookie_file)
         
-        if args.update:
-            group_information.read_tree(read_contents=False)
-            group_information.fetch_update(args.update_count, replace_information=True)
-        else:
-            group_information.fetch(args.topic_page_limit)
+        if not lynx_cfg:
+            lynx_cfg = None
         
-        group_information.write_tree()
+        if lynx_cfg and not os.path.exists(lynx_cfg):
+            if verbose: print "%s: does not exist, not using LYNX_CFG" % lynx_cfg
+            lynx_cfg = None
+        
+        fetcher = LynxFetcher(lynx_cfg, lynx_cookie_file)
+        
+        if not fetcher.has_cookies():
+            if args.login:
+                print >>sys.stderr, "No cookie file configured, but login requested. That doesn't work. See documentation."
+                return 1
+            else:
+                if verbose: print "Note: No cookie file available for lynx and/or cookie sending not enabled, cannot act as logged-in user. See documentation."
+        
+        with fetcher.temp_context():
+            group_information = GroupInformation(fetcher, group)
+            
+            if args.login:
+                group_information.login()
+            
+            if args.login_only:
+                return 0
+            
+            if args.update:
+                group_information.read_tree(read_contents=False)
+                group_information.fetch_update(args.update_count, replace_information=True)
+            else:
+                group_information.fetch(args.topic_page_limit)
+            
+            group_information.write_tree()
         
         return 0
     except KeyboardInterrupt:
@@ -260,7 +362,7 @@ USAGE
             raise
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
-        sys.stderr.write(indent + "  for help use --help")
+        sys.stderr.write(indent + "  for help use --help\n")
         return 2
 
 if __name__ == "__main__":
