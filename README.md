@@ -40,3 +40,5 @@ The URLs retrieved are:
 * `https://groups.google.com/forum/?_escaped_fragment_=forum/GROUP_NAME` which returns an overview page with links to `https://groups.google.com/d/topic/GROUP_NAME/TOPIC_ID` listing a number of topic IDs and possibly a link to the next page looking something like `https://groups.google.com/forum/?_escaped_fragment_=forum/GROUP_NAME[21-40-false]`. All the next page links are followed until no next page is found.
 * `https://groups.google.com/forum/?_escaped_fragment_=topic/GROUP_NAME/TOPIC_ID` which returns a message overview with links to `https://groups.google.com/d/msg/GROUP_NAME/TOPIC_ID/MESSAGE_ID` listing all message IDs.
 * `https://groups.google.com/forum/message/raw?msg=GROUP_NAME/TOPIC_ID/MESSAGE_ID` which returns the actual message in mbox format (with some brokenness, see Misfeatures).
+* `https://groups.google.com/forum/feed/GROUP_NAME/msgs/rss.xml?num=MESSAGE_COUNT` which returns an RSS file with the last MESSAGE_COUNT messages. A link to each message of the form `https://groups.google.com/d/msg/GROUP_NAME/TOPIC_ID/MESSAGE_ID` (giving topic and message ID) is the `<link>` element of each `<item>`
+ 
