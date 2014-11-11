@@ -27,6 +27,8 @@ import xml.etree.ElementTree as ElementTree
 from contextlib import contextmanager
 import tempfile
 
+from demangle import handle_data, ProcessingError
+
 __all__ = []
 __version__ = 0.1
 __date__ = '2014-11-03'
@@ -176,7 +178,7 @@ class GroupInformation(object):
                 else:
                     if verbose: "Skipping %s " % message_url
     
-    def write_tree(self):
+    def write_tree(self, demangle=False):
         global verbose
         for topic in self.topics.keys():
             if verbose: print "Writing message contents for topic %s ..." % topic
@@ -188,8 +190,16 @@ class GroupInformation(object):
                         dir_name = os.path.join(self.group_name, topic)
                         if not os.path.exists(dir_name):
                             os.makedirs(dir_name)
+                        
+                        data = self.topics[topic][message]
+                        if demangle:
+                            try:
+                                data = handle_data(data)
+                            except ProcessingError as e:
+                                print >>sys.stderr, "%s: %s" % (file_name, e.message)
+                        
                         with open(file_name, "w") as fp:
-                            fp.write(self.topics[topic][message])
+                            fp.write(data)
                             print file_name
                     else:
                         if verbose: print "Skipping %s, exists" % file_name
@@ -295,6 +305,7 @@ USAGE
         parser.add_argument("-L", "--login-only", action="store_true", help="Exit after opening the Google groups login form (implies --login)")
         parser.add_argument("-u", "--update", help="Don't spider, but update from RSS of last messages", action="store_true")
         parser.add_argument("-U", "--update-count", help="Number of messages to request in RSS for --update mode, default: 50", default=None, type=int)
+        parser.add_argument("-d", "--demangle", action="store_true", help="Demangle message contents before writing")
         parser.add_argument(dest="group", help="Name of the Google Group to fetch", metavar="group")
 
         # Process arguments
@@ -351,7 +362,7 @@ USAGE
             else:
                 group_information.fetch(args.topic_page_limit)
             
-            group_information.write_tree()
+            group_information.write_tree(demangle=args.demangle)
         
         return 0
     except KeyboardInterrupt:

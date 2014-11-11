@@ -79,6 +79,15 @@ def fix_nested_mime(data):
 
 OPERATORS = [process_multiple_headers, fix_nested_mime]
 
+def handle_data(data):
+    for op in OPERATORS:
+        try:
+            data = op(data)
+        except ProcessingError as e:
+            e.message = "%s: %s" % (op.__name__, e.message)
+            raise
+    return data
+
 def handle_file(filename, in_place, suffix, dry_run):
     if not filename is None:
         data = open(filename, "r").read()
@@ -96,10 +105,9 @@ def handle_file(filename, in_place, suffix, dry_run):
         converted_line_endings = False
     
     try:
-        for op in OPERATORS:
-            data = op(data)
+        data = handle_data(data)
     except ProcessingError as e:
-        print >>sys.stderr, "%s: %s: %s" % (filename, op.__name__, e.message)
+        print >>sys.stderr, "%s: %s" % (filename, e.message)
     
     if converted_line_endings:
         data = "\n".join( data.split("\r\n") )
