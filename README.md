@@ -120,8 +120,7 @@ optional arguments:
                         Number of topic overview pages to process, usually at
                         20 topics per page
   -c LYNX_CFG, --lynx-cfg LYNX_CFG
-                        Lynx configuration file [default:
-                        /home/henryk/.lynxrc]
+                        Lynx configuration file [default: ${HOME}/.lynxrc]
   -C LYNX_COOKIE_FILE, --lynx-cookie-file LYNX_COOKIE_FILE
                         Lynx cookie file to read cookies from and store
                         cookies to
