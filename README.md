@@ -25,7 +25,7 @@ And at a later point to update using the RSS of the latest 50 messages:
 
 ## Restricted group/Full member addresses
 
-Depending on your lynx configuration you will not be able to access restricted groups this way. Also: all email addresses in all messages will be mangled to protect against address harvesting. Both problems can be solved by logging into a Google account with access to the group. (Getting full email addresses may need additional permissions.)
+Depending on your lynx configuration you will not be able to access restricted groups this way. Also: all email addresses in all messages will be mangled to protect against address harvesting. Both problems can be solved by logging into a Google account with access to the group. (Getting full email addresses probably needs group administrator permissions.)
 
 ````
 ./src/gggd.py -l -C cookies group-name
@@ -63,13 +63,13 @@ In order for `gggd` to be able to act as a logged-in user (allowing to access no
 
 ## Create local cookie file
 
-When calling `gggd` with the `-C cookie` option (where `cookie` is a file name), lynx will be configured with all necessary options to make `cookie` a file that stores cookies. You can use the option `-l` (log-in and then proceed with the normal operations, i.e. fetch or update) or `-L` (log-in and then exit, e.g. to prepare a file for unattended operation) to `gggd` to call up an interative lynx session with the correct cookie configuration in which you can log in to a Google account.
+When calling `gggd` with the `-C cookies` option (where `cookies` is a file name), lynx will be configured with all necessary options to make `cookies` a file that stores cookies. You can use the option `-l` (log-in and then proceed with the normal operations, i.e. fetch or update) or `-L` (log-in and then exit, e.g. to prepare a file for unattended operation) to `gggd` to call up an interative lynx session with the correct cookie configuration in which you can log in to a Google account.
 
-Note: Due to a limit in the lynx parameter passing (the `PERSISTENT_COOKIES` option can only be set at compile time or in a configuration file), this mode of operation utilizes a temporary lynx configuration file.
+Note: Due to a limitation in the lynx parameter passing (the `PERSISTENT_COOKIES` option can only be set at compile time or in a configuration file), this mode of operation utilizes a temporary lynx configuration file.
 
 ## Create a user cookie file
 
-If you don't want to always have to pass the `-C cookie` option you can create a lynx configuration file in `${HOME}/.lynxrc` and configure this for permanent cookies. Lynx *will not* read more than one configuration, so using a custom configuration file will *replace* all system defaults. For this reason it's recommended to create the file like so:
+If you don't want to always have to pass the `-C cookies` option you can create a lynx configuration file in `${HOME}/.lynxrc` and configure this for permanent cookies. Lynx *will not* read more than one configuration, so using a custom configuration file will *replace* all system defaults. For this reason it's recommended to create the file like so:
 
 ````
 lynx -show_cfg > .lynxrc
@@ -99,11 +99,43 @@ e.g. in your `.bash_aliases` you can use this configuration for all lynx calls f
 
 ## Using an existing cookie file
 
-Both the `-C cookie` and the `-c config` options can be used with cookie files prepared externally. This is out of the scope of this document, see the lynx documentation. Note that in case of an existing fully filled cookie file you only need the `SET_COOKIES` and `COOKIE_FILE` configuration options.
+Both the `-C cookies` and the `-c config` options can be used with cookie files prepared externally. This is out of the scope of this document, see the lynx documentation. Note that in case of an existing fully filled cookie file you only need the `SET_COOKIES` and `COOKIE_FILE` configuration options.
 
 # Full option set
 
-FIXME
+````
+usage: gggd.py [-h] [-v] [-V] [-t TOPIC_PAGE_LIMIT] [-c LYNX_CFG]
+               [-C LYNX_COOKIE_FILE] [-b] [-l] [-L] [-u] [-U UPDATE_COUNT]
+               [-d]
+               group
+
+positional arguments:
+  group                 Name of the Google Group to fetch
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -v, --verbose         set verbosity level [default: None]
+  -V, --version         show program's version number and exit
+  -t TOPIC_PAGE_LIMIT, --topic-page-limit TOPIC_PAGE_LIMIT
+                        Number of topic overview pages to process, usually at
+                        20 topics per page
+  -c LYNX_CFG, --lynx-cfg LYNX_CFG
+                        Lynx configuration file [default:
+                        /home/henryk/.lynxrc]
+  -C LYNX_COOKIE_FILE, --lynx-cookie-file LYNX_COOKIE_FILE
+                        Lynx cookie file to read cookies from and store
+                        cookies to
+  -b, --batch-mode      Batch mode: no interaction at all, no helpful hints
+  -l, --login           Open the Google groups login form before performing
+                        other actions
+  -L, --login-only      Exit after opening the Google groups login form
+                        (implies --login)
+  -u, --update          Don't spider, but update from RSS of last messages
+  -U UPDATE_COUNT, --update-count UPDATE_COUNT
+                        Number of messages to request in RSS for --update
+                        mode, default: 50
+  -d, --demangle        Demangle message contents before writing
+````
 
 # mbox conversion and mailman import
 
