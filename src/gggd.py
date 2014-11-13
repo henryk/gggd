@@ -56,16 +56,35 @@ class LynxFetcher(object):
             ])
         return args
     
-    def fetch(self, url, list_only=False, source=False):
+    def fetch(self, url, list_only=False, source=False, header=False, stderr=False):
         args = ["lynx", "-dump"]
         args.extend( self.default_params() )
         if list_only:
             args.append("-listonly")
+            if header:
+                raise ValueError("Can't specify header=True and list_only=True at the same time")
         if source:
             args.append("-source")
+        if header:
+            args.append("-mime_header")
+        if stderr:
+            args.append("-stderr")
         args.append(url)
-        return subprocess.check_output(args)
-    
+        
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        data, errors = p.communicate()
+        
+        if header:
+            if stderr:
+                return data.split("\r\n\r\n", 1) + [errors]
+            else:
+                return data.split("\r\n\r\n", 1)
+        else:
+            if stderr:
+                return data, errors
+            else:
+                return data
+        
     def interactive(self, url):
         args = ["lynx", "-child", "-nopause"]
         args.extend( self.default_params() )
@@ -111,11 +130,21 @@ class LynxFetcher(object):
         else:
             yield
 
+class HTTPHeader(object):
+    def __init__(self, header_data):
+        self.data = header_data.splitlines()
+        self.status_line = self.data[0]
+        self.code = int(self.status_line.split()[1])
+        self.message = self.status_line.split(None,2)[2]
+
+
 class GroupInformation(object):
     def __init__(self, fetcher, group_name):
         self.fetcher = fetcher
         self.group_name = group_name
         self.topics = {}
+        self.had_500 = False
+        self.had_403 = False
     
     def fetch(self, topic_page_limit=None):
         self.fetch_topics(topic_page_limit)
@@ -128,7 +157,11 @@ class GroupInformation(object):
         next_page = "https://groups.google.com/forum/?_escaped_fragment_=forum/%s" % self.group_name
         while next_page and page_limit is None or page_limit > 0:
             if verbose: print "Fetching %s" % next_page
-            data = self.fetcher.fetch(next_page, list_only=True)
+            header, data = self._fetch_x(next_page, list_only=True)
+            if header.code != 200:
+                print >>sys.stderr, "Error: %s: %s" % (next_page, header.status_line)
+                return
+            
             next_page = self.parse_topics(data)
             if page_limit is not None:
                 page_limit = page_limit - 1
@@ -157,7 +190,11 @@ class GroupInformation(object):
         global verbose
         next_page = "https://groups.google.com/forum/?_escaped_fragment_=topic/%s/%s" % (self.group_name, topic)
         if verbose: print "Fetching %s" % next_page
-        data = self.fetcher.fetch(next_page, list_only=True)
+        header, data = self._fetch_x(next_page, list_only=True)
+        if header.code != 200:
+            print >>sys.stderr, "Error: %s: %s" % (next_page, header.status_line)
+            return
+        
         for line in data.splitlines():
             parts = line.split()
             if len(parts) > 1 and parts[1].startswith("https://groups.google.com/d/msg/%s/%s" % (self.group_name, topic)):
@@ -173,10 +210,42 @@ class GroupInformation(object):
                 message_url = "https://groups.google.com/forum/message/raw?msg=%s/%s/%s" % (self.group_name, topic, message)
                 if self.topics[topic][message] is None:
                     if verbose: print "Fetching %s" % message_url
-                    data = self.fetcher.fetch(message_url, source=True)
-                    self.topics[topic][message] = data
+                    try:
+                        header, data = self._fetch_x(message_url, source=True)
+                        if header.code == 200:
+                            self.topics[topic][message] = data
+                        else:
+                            if verbose:
+                                print "Error: %s: %s" % (message_url, header.status_line)
+                            else:
+                                print >>sys.stderr, "%s/%s/%s: Failed (%s)" % (self.group_name, topic, message, header.code)
+                    except Exception as e:
+                        print >>sys.stderr, "%s: %s" % (message_url, e)
                 else:
                     if verbose: "Skipping %s " % message_url
+    
+    def _fetch_x(self, url, list_only=False, *args, **kwargs):
+        if list_only:
+            data, stderr = self.fetcher.fetch(url, list_only=list_only, stderr=True, *args, **kwargs)
+            header = None
+            if len(stderr.strip()) > 0:
+                for l in stderr.splitlines():
+                    if l.startswith("Alert!:"): # Is this locale sensitive?
+                        header = HTTPHeader(l.split(":",1)[1].strip())
+                        break
+                if header is None:
+                    header = HTTPHeader("HTTP/1.0 999 Unknown Lynx output: %s" % ("".join(stderr.splitlines())))
+            if header is None:
+                header = HTTPHeader("HTTP/1.0 200 Probably OK. I Guess.")
+        else:
+            header, data = self.fetcher.fetch(url, header=True, *args, **kwargs)
+            header = HTTPHeader(header)
+        
+        if header.code == 500:
+            self.had_500 = True
+        elif header.code == 403:
+            self.had_403 = True
+        return header, data
     
     def write_tree(self, demangle=False):
         global verbose
@@ -217,7 +286,10 @@ class GroupInformation(object):
         global verbose
         if verbose: print "Retrieving update RSS ..."
         rss_url = "https://groups.google.com/forum/feed/%s/msgs/rss.xml?num=%i" % (self.group_name, update_count)
-        data = self.fetcher.fetch(rss_url, source=True)
+        header, data = self._fetch_x(rss_url, source=True)
+        if header.code != 200:
+            print >>sys.stderr, "Error: %s: %s" % (rss_url, header.status_line)
+            return
         
         root = ElementTree.fromstring(data)
         
@@ -300,7 +372,7 @@ USAGE
         parser.add_argument("-t", "--topic-page-limit", help="Number of topic overview pages to process, usually at 20 topics per page", default=None, type=int)
         parser.add_argument("-c", "--lynx-cfg", help="Lynx configuration file [default: %(default)s]", default=expanduser("~/.lynxrc"))
         parser.add_argument("-C", "--lynx-cookie-file", help="Lynx cookie file to read cookies from and store cookies to")
-        parser.add_argument("-b", "--batch-mode", action="store_true", help="Batch mode: no interaction at all")
+        parser.add_argument("-b", "--batch-mode", action="store_true", help="Batch mode: no interaction at all, no helpful hints")
         parser.add_argument("-l", "--login", action="store_true", help="Open the Google groups login form before performing other actions")
         parser.add_argument("-L", "--login-only", action="store_true", help="Exit after opening the Google groups login form (implies --login)")
         parser.add_argument("-u", "--update", help="Don't spider, but update from RSS of last messages", action="store_true")
@@ -342,7 +414,8 @@ USAGE
         
         if not fetcher.has_cookies():
             if args.login:
-                print >>sys.stderr, "No cookie file configured, but login requested. That doesn't work. See documentation."
+                if not batch_mode:
+                    print >>sys.stderr, "No cookie file configured, but login requested. That doesn't work. See documentation."
                 return 1
             else:
                 if verbose: print "Note: No cookie file available for lynx and/or cookie sending not enabled, cannot act as logged-in user. See documentation."
@@ -363,6 +436,12 @@ USAGE
                 group_information.fetch(args.topic_page_limit)
             
             group_information.write_tree(demangle=args.demangle)
+            
+            if not batch_mode:
+                if group_information.had_500:
+                    print >>sys.stderr, "Some messages could not be retrieved due to a HTTP '500' error. This may mean that the messages have been deleted. See documentation."
+                if group_information.had_403:
+                    print >>sys.stderr, "Some resources could not be retrieved due to a HTTP '403' error (Unauthorized access). You may want to retry with -l. See documentation."
         
         return 0
     except KeyboardInterrupt:
