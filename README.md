@@ -138,7 +138,15 @@ optional arguments:
 
 # mbox conversion and mailman import
 
-FIXME
+To convert the downloaded files into a single mbox file, the `formail` command (part of the procmail package) can be used. `formail` can only properly handle messages with Unix line endings (LF), but the files provided by the Google Groups API are using Internet/DOS/Windows line endings (CRLF) so we'll also need the `dos2unix` command:
+
+````
+(for i in `find group-name -type f -name "*"`; do dos2unix < $i | formail; done) > group-name.mbox
+````
+
+will find all files in the `group-name` directory, pass them through `dos2unix` and `formail` and concatenate the results into the `group-name.mbox` file.
+
+In order to import this mailing list archive into mailman, all you have to do is create the new mailing list in mailman the usual way, configure it, and then follow the instructions in the mailman FAQ: http://wiki.list.org/pages/viewpage.action?pageId=4030624
 
 # Theory of operation
 The basic ideas of the software are adapted from https://github.com/icy/google-group-crawler with important distinctions: This project is in Python which is easier to read and adapt, and it uses lynx with a configuration file for all operations which allows to access protected groups (lynx needs to be manually logged in to a Google account with group access first).
