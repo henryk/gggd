@@ -72,7 +72,7 @@ Note: Due to a limitation in the lynx parameter passing (the `PERSISTENT_COOKIES
 If you don't want to always have to pass the `-C cookies` option you can create a lynx configuration file in `${HOME}/.lynxrc` and configure this for permanent cookies. Lynx *will not* read more than one configuration, so using a custom configuration file will *replace* all system defaults. For this reason it's recommended to create the file like so:
 
 ````
-lynx -show_cfg > .lynxrc
+lynx -show_cfg > ~/.lynxrc
 ````
 
 which will dump the current configuration into the file. Then you can use any editor to update the file and add the following configuration items to the end:
