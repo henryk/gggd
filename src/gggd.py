@@ -42,7 +42,7 @@ class LynxFetcher(object):
     def __init__(self, lynx_cfg=None, lynx_cookie_file=None):
         self.lynx_cfg = lynx_cfg
         self.lynx_cookie_file = lynx_cookie_file
-    
+
     def default_params(self):
         args = []
         if self.lynx_cfg:
@@ -55,7 +55,7 @@ class LynxFetcher(object):
                 "-cookies+"
             ])
         return args
-    
+
     def fetch(self, url, list_only=False, source=False, header=False, stderr=False):
         args = ["lynx", "-dump"]
         args.extend( self.default_params() )
@@ -70,10 +70,10 @@ class LynxFetcher(object):
         if stderr:
             args.append("-stderr")
         args.append(url)
-        
+
         p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         data, errors = p.communicate()
-        
+
         if header:
             if stderr:
                 return data.split("\r\n\r\n", 1) + [errors]
@@ -84,28 +84,28 @@ class LynxFetcher(object):
                 return data, errors
             else:
                 return data
-        
+
     def interactive(self, url):
         args = ["lynx", "-child", "-nopause"]
         args.extend( self.default_params() )
         args.append(url)
         subprocess.call(args)
-    
+
     def dump_config(self):
         args = ["lynx", "-show_cfg"]
         args.extend( self.default_params() )
         return subprocess.check_output(args)
-    
+
     def has_cookies(self):
         if self.lynx_cookie_file:
             return True
-        
+
         configuration_data = self.dump_config()
-        
+
         have_set_cookies = False
         have_cookie_file = False
         have_persistent_cookies = False
-        
+
         for k,v in [e.split(":", 1) for e in configuration_data.splitlines() if not e.startswith("#")]:
             if k == "SET_COOKIES" and v.startswith("TRUE"):
                 have_set_cookies = True
@@ -113,9 +113,9 @@ class LynxFetcher(object):
                 have_persistent_cookies = True
             if k == "COOKIE_FILE":
                 have_cookie_file = True
-        
+
         return have_persistent_cookies and have_set_cookies and have_cookie_file
-    
+
     @contextmanager
     def temp_context(self):
         if self.lynx_cookie_file:
@@ -123,9 +123,9 @@ class LynxFetcher(object):
                 fp.write(self.dump_config())
                 fp.write("PERSISTENT_COOKIES:TRUE\n")
                 fp.flush()
-                
+
                 self.lynx_cfg = fp.name
-                
+
                 yield
         else:
             yield
@@ -145,12 +145,12 @@ class GroupInformation(object):
         self.topics = {}
         self.had_500 = False
         self.had_403 = False
-    
+
     def fetch(self, topic_page_limit=None):
         self.fetch_topics(topic_page_limit)
         self.fetch_messages()
         self.fetch_content()
-    
+
     def fetch_topics(self, page_limit=None):
         global verbose
         if verbose: print "Fetching topics ..."
@@ -161,11 +161,11 @@ class GroupInformation(object):
             if header.code != 200:
                 print >>sys.stderr, "Error: %s: %s" % (next_page, header.status_line)
                 return
-            
+
             next_page = self.parse_topics(data)
             if page_limit is not None:
                 page_limit = page_limit - 1
-    
+
     def parse_topics(self, data):
         global verbose
         next_page = None
@@ -179,13 +179,13 @@ class GroupInformation(object):
                 next_page = parts[1]
                 if verbose: print "Next page is %s" % parts[1]
         return next_page
-    
+
     def fetch_messages(self):
         global verbose
         if verbose: print "Fetching messages ..."
         for topic in self.topics.keys():
             self.fetch_messages_topic(topic)
-    
+
     def fetch_messages_topic(self, topic):
         global verbose
         next_page = "https://groups.google.com/forum/?_escaped_fragment_=topic/%s/%s" % (self.group_name, topic)
@@ -194,14 +194,14 @@ class GroupInformation(object):
         if header.code != 200:
             print >>sys.stderr, "Error: %s: %s" % (next_page, header.status_line)
             return
-        
+
         for line in data.splitlines():
             parts = line.split()
             if len(parts) > 1 and parts[1].startswith("https://groups.google.com/d/msg/%s/%s" % (self.group_name, topic)):
                 m = parts[1].split("/")[-1]
                 self.topics[topic][m] = None
                 if verbose: print "Discovered %s" % parts[1]
-    
+
     def fetch_content(self):
         global verbose
         for topic in self.topics.keys():
@@ -223,7 +223,7 @@ class GroupInformation(object):
                         print >>sys.stderr, "%s: %s" % (message_url, e)
                 else:
                     if verbose: "Skipping %s " % message_url
-    
+
     def _fetch_x(self, url, list_only=False, *args, **kwargs):
         if list_only:
             data, stderr = self.fetcher.fetch(url, list_only=list_only, stderr=True, *args, **kwargs)
@@ -240,13 +240,13 @@ class GroupInformation(object):
         else:
             header, data = self.fetcher.fetch(url, header=True, *args, **kwargs)
             header = HTTPHeader(header)
-        
+
         if header.code == 500:
             self.had_500 = True
         elif header.code == 403:
             self.had_403 = True
         return header, data
-    
+
     def write_tree(self, demangle=False):
         global verbose
         for topic in self.topics.keys():
@@ -259,20 +259,20 @@ class GroupInformation(object):
                         dir_name = os.path.join(self.group_name, topic)
                         if not os.path.exists(dir_name):
                             os.makedirs(dir_name)
-                        
+
                         data = self.topics[topic][message]
                         if demangle:
                             try:
                                 data = handle_data(data)
                             except ProcessingError as e:
                                 print >>sys.stderr, "%s: %s" % (file_name, e.message)
-                        
+
                         with open(file_name, "w") as fp:
                             fp.write(data)
                             print file_name
                     else:
                         if verbose: print "Skipping %s, exists" % file_name
-    
+
     def read_tree(self, read_contents = True):
         for topic in os.listdir(self.group_name):
             self.topics[topic] = {}
@@ -281,7 +281,7 @@ class GroupInformation(object):
                     self.topics[topic][message] = open( os.path.join(self.group_name, topic, message, "r") ).read()
                 else:
                     self.topics[topic][message] = None
-    
+
     def fetch_update(self, update_count, replace_information=False):
         global verbose
         if verbose: print "Retrieving update RSS ..."
@@ -290,35 +290,35 @@ class GroupInformation(object):
         if header.code != 200:
             print >>sys.stderr, "Error: %s: %s" % (rss_url, header.status_line)
             return
-        
+
         root = ElementTree.fromstring(data)
-        
+
         topics = {}
-        
+
         nodes = root.findall(".//item/link")
         for node in nodes:
             url = node.text
             if url.startswith("https://groups.google.com/d/msg/%s" % self.group_name):
                 topic, message = url.split("/")[-2:]
                 if verbose: print "Discovered %s, %s" % (topic, message)
-                
+
                 if not topic in self.topics:
                     if verbose: print "Topic %s is new" % topic
                     self.topics[topic] = {}
                     topics[topic] = {}
-                
+
                 if not message in self.topics[topic]:
                     if verbose: print "Message %s is new" % message
                     self.topics[topic][message] = None
-                    
+
                     if not topic in topics: topics[topic] = {}
                     topics[topic][message] = None
-        
+
         if replace_information:
             self.topics = topics
-        
+
         self.fetch_content()
-    
+
     def login(self):
         print """Please log in to your Google groups account (navigate the form fields with up
 and down arrows, submit form with Enter) and then exit the browser (using the 'q' key).
@@ -340,7 +340,7 @@ class CLIError(Exception):
 def main(argv=None): # IGNORE:C0111
     '''Command line options.'''
     global verbose, batch_mode
-    
+
     if argv is None:
         argv = sys.argv
     else:
@@ -386,32 +386,32 @@ USAGE
             args.update_count = 50
         else:
             args.update = True
-        
+
         if args.login_only:
             args.login = True
-        
+
         if args.login and args.batch_mode:
             print >>sys.stderr, "Batch mode configured, but login requested. That doesn't work. See documentation."
             return 1
-        
+
         group = args.group
         verbose = args.verbose
         batch_mode = args.batch_mode
-        
+
         lynx_cfg = args.lynx_cfg
         lynx_cookie_file = args.lynx_cookie_file
         if lynx_cookie_file:
             lynx_cookie_file = os.path.join( os.getcwd(), lynx_cookie_file)
-        
+
         if not lynx_cfg:
             lynx_cfg = None
-        
+
         if lynx_cfg and not os.path.exists(lynx_cfg):
             if verbose: print "%s: does not exist, not using LYNX_CFG" % lynx_cfg
             lynx_cfg = None
-        
+
         fetcher = LynxFetcher(lynx_cfg, lynx_cookie_file)
-        
+
         if not fetcher.has_cookies():
             if args.login:
                 if not batch_mode:
@@ -419,30 +419,30 @@ USAGE
                 return 1
             else:
                 if verbose: print "Note: No cookie file available for lynx and/or cookie sending not enabled, cannot act as logged-in user. See documentation."
-        
+
         with fetcher.temp_context():
             group_information = GroupInformation(fetcher, group)
-            
+
             if args.login:
                 group_information.login()
-            
+
             if args.login_only:
                 return 0
-            
+
             if args.update:
                 group_information.read_tree(read_contents=False)
                 group_information.fetch_update(args.update_count, replace_information=True)
             else:
                 group_information.fetch(args.topic_page_limit)
-            
+
             group_information.write_tree(demangle=args.demangle)
-            
+
             if not batch_mode:
                 if group_information.had_500:
                     print >>sys.stderr, "Some messages could not be retrieved due to a HTTP '500' error. This may mean that the messages have been deleted. See documentation."
                 if group_information.had_403:
                     print >>sys.stderr, "Some resources could not be retrieved due to a HTTP '403' error (Unauthorized access). You may want to retry with -l. See documentation."
-        
+
         return 0
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
