@@ -139,9 +139,10 @@ class HTTPHeader(object):
 
 
 class GroupInformation(object):
-    def __init__(self, fetcher, group_name):
+    def __init__(self, fetcher, group_name, organization=None):
         self.fetcher = fetcher
         self.group_name = group_name
+        self.org_path = "/a/%s" % organization if organization else ''
         self.topics = {}
         self.had_500 = False
         self.had_403 = False
@@ -154,7 +155,7 @@ class GroupInformation(object):
     def fetch_topics(self, page_limit=None):
         global verbose
         if verbose: print "Fetching topics ..."
-        next_page = "https://groups.google.com/forum/?_escaped_fragment_=forum/%s" % self.group_name
+        next_page = "https://groups.google.com%s/forum/?_escaped_fragment_=forum/%s" % (self.org_path, self.group_name)
         while next_page and page_limit is None or page_limit > 0:
             if verbose: print "Fetching %s" % next_page
             header, data = self._fetch_x(next_page, list_only=True)
@@ -171,11 +172,12 @@ class GroupInformation(object):
         next_page = None
         for line in data.splitlines():
             parts = line.split()
-            if len(parts) > 1 and parts[1].startswith("https://groups.google.com/d/topic/%s" % self.group_name):
+            # print parts
+            if len(parts) > 1 and parts[1].startswith("https://groups.google.com%s/d/topic/%s" % (self.org_path, self.group_name)):
                 t = parts[1].split("/")[-1]
                 self.topics[t] = {}
                 if verbose: print "Discovered %s" % parts[1]
-            elif len(parts) > 1 and parts[1].startswith("https://groups.google.com/forum/?_escaped_fragment_=forum/"):
+            elif len(parts) > 1 and parts[1].startswith("https://groups.google.com%s/forum/?_escaped_fragment_=forum/" % self.org_path):
                 next_page = parts[1]
                 if verbose: print "Next page is %s" % parts[1]
         return next_page
@@ -188,7 +190,7 @@ class GroupInformation(object):
 
     def fetch_messages_topic(self, topic):
         global verbose
-        next_page = "https://groups.google.com/forum/?_escaped_fragment_=topic/%s/%s" % (self.group_name, topic)
+        next_page = "https://groups.google.com%s/forum/?_escaped_fragment_=topic/%s/%s" % (self.org_path, self.group_name, topic)
         if verbose: print "Fetching %s" % next_page
         header, data = self._fetch_x(next_page, list_only=True)
         if header.code != 200:
@@ -197,7 +199,7 @@ class GroupInformation(object):
 
         for line in data.splitlines():
             parts = line.split()
-            if len(parts) > 1 and parts[1].startswith("https://groups.google.com/d/msg/%s/%s" % (self.group_name, topic)):
+            if len(parts) > 1 and parts[1].startswith("https://groups.google.com%s/d/msg/%s/%s" % (self.org_path, self.group_name, topic)):
                 m = parts[1].split("/")[-1]
                 self.topics[topic][m] = None
                 if verbose: print "Discovered %s" % parts[1]
@@ -207,7 +209,7 @@ class GroupInformation(object):
         for topic in self.topics.keys():
             if verbose: print "Retrieving message contents for topic %s ..." % topic
             for message in self.topics[topic].keys():
-                message_url = "https://groups.google.com/forum/message/raw?msg=%s/%s/%s" % (self.group_name, topic, message)
+                message_url = "https://groups.google.com%s/forum/message/raw?msg=%s/%s/%s"  % (self.org_path, self.group_name, topic, message)
                 if self.topics[topic][message] is None:
                     if verbose: print "Fetching %s" % message_url
                     try:
@@ -285,7 +287,7 @@ class GroupInformation(object):
     def fetch_update(self, update_count, replace_information=False):
         global verbose
         if verbose: print "Retrieving update RSS ..."
-        rss_url = "https://groups.google.com/forum/feed/%s/msgs/rss.xml?num=%i" % (self.group_name, update_count)
+        rss_url = "https://groups.google.com%s/forum/feed/%s/msgs/rss.xml?num=%i" % (self.org_path, self.group_name, update_count)
         header, data = self._fetch_x(rss_url, source=True)
         if header.code != 200:
             print >>sys.stderr, "Error: %s: %s" % (rss_url, header.status_line)
@@ -298,7 +300,7 @@ class GroupInformation(object):
         nodes = root.findall(".//item/link")
         for node in nodes:
             url = node.text
-            if url.startswith("https://groups.google.com/d/msg/%s" % self.group_name):
+            if url.startswith("https://groups.google.com%s/d/msg/%s" % (self.org_path, self.group_name)):
                 topic, message = url.split("/")[-2:]
                 if verbose: print "Discovered %s, %s" % (topic, message)
 
@@ -324,7 +326,7 @@ class GroupInformation(object):
 and down arrows, submit form with Enter) and then exit the browser (using the 'q' key).
 Press Enter to continue."""
         sys.stdin.readline()
-        self.fetcher.interactive( "https://www.google.com/a/UniversalLogin?continue=https://groups.google.com/forum/&service=groups2&hd=default" )
+        self.fetcher.interactive( "https://www.google.com/a/UniversalLogin?continue=https://groups.google.com%s/forum/&service=groups2&hd=default" % self.org_path)
 
 
 class CLIError(Exception):
@@ -378,6 +380,7 @@ USAGE
         parser.add_argument("-u", "--update", help="Don't spider, but update from RSS of last messages", action="store_true")
         parser.add_argument("-U", "--update-count", help="Number of messages to request in RSS for --update mode, default: 50", default=None, type=int)
         parser.add_argument("-d", "--demangle", action="store_true", help="Demangle message contents before writing")
+        parser.add_argument("-o", "--organization", help="Use only if the Google Group is nested under an organization, eg 'w3c.org'")
         parser.add_argument(dest="group", help="Name of the Google Group to fetch", metavar="group")
 
         # Process arguments
@@ -395,6 +398,7 @@ USAGE
             return 1
 
         group = args.group
+        organization = args.organization
         verbose = args.verbose
         batch_mode = args.batch_mode
 
@@ -421,7 +425,7 @@ USAGE
                 if verbose: print "Note: No cookie file available for lynx and/or cookie sending not enabled, cannot act as logged-in user. See documentation."
 
         with fetcher.temp_context():
-            group_information = GroupInformation(fetcher, group)
+            group_information = GroupInformation(fetcher, group, organization)
 
             if args.login:
                 group_information.login()
